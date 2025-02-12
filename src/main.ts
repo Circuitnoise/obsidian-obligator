@@ -43,6 +43,7 @@ interface ObligatorSettings {
 	archive_date_format: string;
 	delete_empty_headings: boolean;
 	keep_template_headings: boolean;
+	remove_empty_todos_from_previous_note: boolean;
 	run_on_startup: boolean;
 	keep_until_parent_complete: boolean;
 }
@@ -58,6 +59,7 @@ const DEFAULT_SETTINGS: ObligatorSettings = {
 	archive_date_format: "YYYY/MM-MMMM/YYYY-MM-DD",
 	delete_empty_headings: true,
 	keep_template_headings: true,
+	remove_empty_todos_from_previous_note: false,
 	run_on_startup: false,
 	keep_until_parent_complete: false
 }
@@ -375,6 +377,16 @@ export default class Obligator extends Plugin {
 					if (data !== null && output_file instanceof TFile) {
 						data = data.replace(/{{\s*next_note\s*}}/g, output_file.basename);
 						data = data.replace(/{{\s*next_note_path\s*}}/g, output_file.path);
+					}
+					return data;
+				});
+			}
+
+			if (this.settings.remove_empty_todos_from_previous_note && last_note instanceof TFile) {
+				await this.app.vault.process(last_note, (data) => {
+					if (data !== null) {
+						// Replace any line within the file that starts with an empty checkbox: "- [ ]"
+						return data.replace(/^(\s?- \[[\s|\/]].*?$)/gm, '');
 					}
 					return data;
 				});
@@ -731,6 +743,23 @@ class ObligatorSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.keep_until_parent_complete)
 			    .onChange(async value => {
 					this.plugin.settings.keep_until_parent_complete = value;
+					await this.plugin.saveSettings();
+				})
+			});
+
+		// --------------------------------------------------------------------
+		// Remove the previous day's TODOs if they are complete
+		// --------------------------------------------------------------------
+		setting_keep_template_headings = new Setting(containerEl)
+			.setName("Delete incomplete todos from previous day")
+			.setDesc(`With this enabled, incomplete todos are deleted from yesterday's Daily note after being copied to today's Daily note. 
+					Keeping this disabled will simply duplicate incomplete todos from yesterday's Daily note. 
+					Enabling this is destructive and may result in lost data. 
+					Note that incomplete todos will be deleted from yesterday's Daily note regardless of what heading they are under.`)
+			.addToggle(toggle => {toggle
+				.setValue(this.plugin.settings.remove_empty_todos_from_previous_note)
+				.onChange(async value => {
+					this.plugin.settings.remove_empty_todos_from_previous_note = value;
 					await this.plugin.saveSettings();
 				})
 			});
