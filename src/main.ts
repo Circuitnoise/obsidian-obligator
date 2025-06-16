@@ -180,48 +180,56 @@ export default class Obligator extends Plugin {
 				}
 				return notes;
 			}
-			const notes = find_all_notes(this.settings.note_path);
-			notes.sort((a, b) => {
-				const a_name = a.path.slice(this.settings.note_path.length + 1);
-				const b_name = b.path.slice(this.settings.note_path.length + 1);
-				return window.moment(b_name, this.settings.date_format).valueOf()
-					 - window.moment(a_name, this.settings.date_format).valueOf();
-			});
+                        const notes = find_all_notes(this.settings.note_path);
+                        notes.sort((a, b) => {
+                                const a_name = a.path.slice(this.settings.note_path.length + 1);
+                                const b_name = b.path.slice(this.settings.note_path.length + 1);
+                                return window.moment(b_name, this.settings.date_format).valueOf()
+                                         - window.moment(a_name, this.settings.date_format).valueOf();
+                        });
 
-			// Get the last note that's not today's.
-			let last_note = null;
-			for (let i=0; i < notes.length; i++) {
-				// Remove the ".md" extension
-				const sub_path = notes[i].path.slice(this.settings.note_path.length + 1).slice(0, -3);
-				// The final boolean makes the moment parse in strict mode
-				const note_moment = window.moment(sub_path, this.settings.date_format, true);
-				if (note_moment.isValid() && note_moment.isBefore(NOW, 'day')) {
-					last_note = notes[i];
-					break;
-				}
-			}
+                        // Collect all previous notes before today
+                        let previous_notes:TFile[] = [];
+                        for (let i=0; i < notes.length; i++) {
+                                const sub_path = notes[i].path.slice(this.settings.note_path.length + 1).slice(0, -3);
+                                const note_moment = window.moment(sub_path, this.settings.date_format, true);
+                                if (note_moment.isValid() && note_moment.isBefore(NOW, 'day')) {
+                                        previous_notes.push(notes[i]);
+                                }
+                        }
 
-			let last_note_structure = null;
+                        let last_note:TFile|null = null;
+                        if (previous_notes.length > 0) {
+                                last_note = previous_notes[0];
+                        }
 
-			if (last_note) {
-				const last_note_content = await this.app.vault.read(last_note);
-				const last_note_lines = strip_frontmatter(last_note_content.split('\n'));
-				let last_note_initial_index = last_note_lines.indexOf(this.settings.initial);
-				if (this.settings.initial === "") {
-					last_note_initial_index = 0;
-				} else if (last_note_initial_index === -1) {
-					new Notice(`${last_note.basename} does not contain the specified initial heading... aborting.`);
-					return;
-				}
-				let last_note_terminal_index = last_note_lines.indexOf(this.settings.terminal);
-				if (this.settings.terminal === "") {
-					last_note_terminal_index = last_note_lines.length;
-				} else if (last_note_terminal_index === -1) {
-					new Notice(`${last_note.basename} does not contain the specified terminal heading... aborting.`);
-					return;
-				}
-				last_note_structure = structurize(last_note_lines.slice(last_note_initial_index, last_note_terminal_index))
-			}
+                        let last_note_structure = null;
+                        let combined_structure = null;
+
+                        for (let i = previous_notes.length - 1; i >= 0; i--) {
+                                const note = previous_notes[i];
+                                const content = await this.app.vault.read(note);
+                                const lines = strip_frontmatter(content.split('\n'));
+                                let start_index = lines.indexOf(this.settings.initial);
+                                if (start_index === -1 || this.settings.initial === "") {
+                                        start_index = 0;
+                                }
+                                let end_index = lines.indexOf(this.settings.terminal);
+                                if (end_index === -1 || this.settings.terminal === "") {
+                                        end_index = lines.length;
+                                }
+
+                                let note_structure = structurize(lines.slice(start_index, end_index));
+                                if (combined_structure === null) {
+                                        combined_structure = note_structure;
+                                } else {
+                                        merge_structure(combined_structure, note_structure);
+                                }
+                        }
+
+                        if (combined_structure) {
+                                last_note_structure = combined_structure;
+                        }
 
 			// ----------------------------------------------------------------
 			// Step 4
