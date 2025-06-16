@@ -33,44 +33,53 @@ import {
 } from "./note_utils"
 
 interface ObligatorSettings {
-	initial: string;
-	terminal: string;
-	date_format: string;
-	template_path: string;
-	note_path: string;
-	archive: boolean;
-	archive_path: string;
-	archive_date_format: string;
-	delete_empty_headings: boolean;
-	keep_template_headings: boolean;
-	remove_empty_todos_from_previous_note: boolean;
-	run_on_startup: boolean;
-	keep_until_parent_complete: boolean;
+        initial: string;
+        terminal: string;
+        date_format: string;
+        template_path: string;
+        note_path: string;
+        archive: boolean;
+        archive_path: string;
+        archive_date_format: string;
+        delete_empty_headings: boolean;
+        keep_template_headings: boolean;
+        remove_empty_todos_from_previous_note: boolean;
+        run_on_startup: boolean;
+        keep_until_parent_complete: boolean;
+        logging: boolean;
 }
 
 const DEFAULT_SETTINGS: ObligatorSettings = {
-	initial: "",
-	terminal: "",
-	date_format: "YYYY-MM-DD",
-	template_path: "",
-	note_path: "",
-	archive: false,
-	archive_path: "",
-	archive_date_format: "YYYY/MM-MMMM/YYYY-MM-DD",
-	delete_empty_headings: true,
-	keep_template_headings: true,
-	remove_empty_todos_from_previous_note: false,
-	run_on_startup: false,
-	keep_until_parent_complete: false
+        initial: "",
+        terminal: "",
+        date_format: "YYYY-MM-DD",
+        template_path: "",
+        note_path: "",
+        archive: false,
+        archive_path: "",
+        archive_date_format: "YYYY/MM-MMMM/YYYY-MM-DD",
+        delete_empty_headings: true,
+        keep_template_headings: true,
+        remove_empty_todos_from_previous_note: false,
+        run_on_startup: false,
+        keep_until_parent_complete: false,
+        logging: false
 }
 
 export default class Obligator extends Plugin {
-	settings: ObligatorSettings;
+        settings: ObligatorSettings;
+
+        log(...args: any[]) {
+                if (this.settings.logging) {
+                        console.log('[Obligator]', ...args);
+                }
+        }
 
 	async onload() {
 		await this.loadSettings();
 
-		const run_obligator = async () => {
+                const run_obligator = async () => {
+                        this.log('Starting Obligator');
 
 			// ----------------------------------------------------------------
 			// Basic logical overview
@@ -86,8 +95,10 @@ export default class Obligator extends Plugin {
 			// Step 1
 			// ----------------------------------------------------------------
 
-			// Make sure the note path is set, if not, error.
-			if (["", null].includes(this.settings.note_path)) {
+                        this.log('Step 1: validate settings');
+                        // Make sure the note path is set, if not, error.
+                        this.log('Note path set to', this.settings.note_path);
+                        if (["", null].includes(this.settings.note_path)) {
 				new Notice(`You must specify a note path in the settings.`);
 				return;
 			}
@@ -99,7 +110,8 @@ export default class Obligator extends Plugin {
 				return;
 			}
 
-			// Make sure that the template file exists
+                        this.log('Template path set to', this.settings.template_path);
+                        // Make sure that the template file exists
 			const TEMPLATE_FILE = this.app.vault.getAbstractFileByPath(`${this.settings.template_path}.md`);
 			if (TEMPLATE_FILE == undefined) {
 				if (["", null].includes(this.settings.template_path)) {
@@ -156,12 +168,14 @@ export default class Obligator extends Plugin {
 			// Step 2
 			// Context: settings are valid
 			// ----------------------------------------------------------------
-			const NEW_NOTE_PATH = `${this.settings.note_path}/${NOTE_NAME}.md`
-			let output_file = this.app.vault.getAbstractFileByPath(NEW_NOTE_PATH);
-			if (output_file != undefined && output_file instanceof TFile) {
-				await ACTIVE_LEAF.openFile(output_file);
-				return;
-			}
+                        const NEW_NOTE_PATH = `${this.settings.note_path}/${NOTE_NAME}.md`;
+                        this.log("Today's note path", NEW_NOTE_PATH);
+                        let output_file = this.app.vault.getAbstractFileByPath(NEW_NOTE_PATH);
+                        if (output_file != undefined && output_file instanceof TFile) {
+                                this.log('Today\'s note already exists');
+                                await ACTIVE_LEAF.openFile(output_file);
+                                return;
+                        }
 
 			// ----------------------------------------------------------------
 			// Step 3
@@ -180,8 +194,9 @@ export default class Obligator extends Plugin {
 				}
 				return notes;
 			}
-			const notes = find_all_notes(this.settings.note_path);
-			notes.sort((a, b) => {
+                        const notes = find_all_notes(this.settings.note_path);
+                        this.log('All notes found', notes.map(n => n.path));
+                        notes.sort((a, b) => {
 				const a_name = a.path.slice(this.settings.note_path.length + 1);
 				const b_name = b.path.slice(this.settings.note_path.length + 1);
 				return window.moment(b_name, this.settings.date_format).valueOf()
@@ -189,19 +204,25 @@ export default class Obligator extends Plugin {
 			});
 
 			// Get the last note that's not today's.
-			let last_note = null;
-			for (let i=0; i < notes.length; i++) {
-				// Remove the ".md" extension
-				const sub_path = notes[i].path.slice(this.settings.note_path.length + 1).slice(0, -3);
-				// The final boolean makes the moment parse in strict mode
-				const note_moment = window.moment(sub_path, this.settings.date_format, true);
-				if (note_moment.isValid() && note_moment.isBefore(NOW, 'day')) {
-					last_note = notes[i];
-					break;
-				}
-			}
+                        let last_note = null;
+                        for (let i=0; i < notes.length; i++) {
+                                const note = notes[i];
+                                this.log('Checking note', note.path);
+                                const sub_path = note.path.slice(this.settings.note_path.length + 1).slice(0, -3);
+                                const note_moment = window.moment(sub_path, this.settings.date_format, true);
+                                if (note_moment.isValid() && note_moment.isBefore(NOW, 'day')) {
+                                        last_note = note;
+                                        break;
+                                }
+                        }
 
-			let last_note_structure = null;
+                        if (last_note) {
+                                this.log('Last note found', last_note.path);
+                        } else {
+                                this.log('No previous note found');
+                        }
+
+                        let last_note_structure = null;
 
 			if (last_note) {
 				const last_note_content = await this.app.vault.read(last_note);
@@ -209,17 +230,19 @@ export default class Obligator extends Plugin {
 				let last_note_initial_index = last_note_lines.indexOf(this.settings.initial);
 				if (this.settings.initial === "") {
 					last_note_initial_index = 0;
-				} else if (last_note_initial_index === -1) {
-					new Notice(`${last_note.basename} does not contain the specified initial heading... aborting.`);
-					return;
-				}
+                                } else if (last_note_initial_index === -1) {
+                                        this.log('Missing initial heading in', last_note.path);
+                                        new Notice(`${last_note.basename} does not contain the specified initial heading... aborting.`);
+                                        return;
+                                }
 				let last_note_terminal_index = last_note_lines.indexOf(this.settings.terminal);
 				if (this.settings.terminal === "") {
 					last_note_terminal_index = last_note_lines.length;
-				} else if (last_note_terminal_index === -1) {
-					new Notice(`${last_note.basename} does not contain the specified terminal heading... aborting.`);
-					return;
-				}
+                                } else if (last_note_terminal_index === -1) {
+                                        this.log('Missing terminal heading in', last_note.path);
+                                        new Notice(`${last_note.basename} does not contain the specified terminal heading... aborting.`);
+                                        return;
+                                }
 				last_note_structure = structurize(last_note_lines.slice(last_note_initial_index, last_note_terminal_index))
 			}
 
@@ -364,12 +387,14 @@ export default class Obligator extends Plugin {
 				}
 			}
 
-			output_file = await this.app.vault.create(NEW_NOTE_PATH, new_note_lines.join('\n'));
+                        output_file = await this.app.vault.create(NEW_NOTE_PATH, new_note_lines.join('\n'));
+                        this.log('Created new note', NEW_NOTE_PATH);
 
 			// Open up the new file
-			if (output_file != undefined && output_file instanceof TFile) {
-				await ACTIVE_LEAF.openFile(output_file);
-			}
+                        if (output_file != undefined && output_file instanceof TFile) {
+                                await ACTIVE_LEAF.openFile(output_file);
+                                this.log('Opened new note');
+                        }
 
 			// Apply the next_note and next_note_path macros to the old file
 			if (last_note instanceof TFile) {
@@ -392,7 +417,8 @@ export default class Obligator extends Plugin {
 				});
 			}
 
-			if (this.settings.archive && last_note) {
+                        if (this.settings.archive && last_note) {
+                                this.log('Archiving last note to', this.settings.archive_path);
 
 				const last_note_name = last_note.path.slice(this.settings.note_path.length + 1);
 				const last_note_moment = window.moment(last_note_name, this.settings.date_format);
@@ -407,13 +433,16 @@ export default class Obligator extends Plugin {
 							await this.app.vault.createFolder(sub_path);
 						}
 					}
-					await this.app.fileManager.renameFile(last_note, archive_note_path);
-				} catch (error) {
-					new Notice(`A file called ${archive_note_path} already exists, archival skipped.`);
-				}
-			}
+                                        await this.app.fileManager.renameFile(last_note, archive_note_path);
+                                        this.log('Archived note', archive_note_path);
+                                } catch (error) {
+                                        this.log('Archival failed', archive_note_path);
+                                        new Notice(`A file called ${archive_note_path} already exists, archival skipped.`);
+                                }
+                        }
 
-		};
+                        this.log('Obligator finished');
+                };
 
 		// This creates an icon in the left ribbon.
 		// This function is called when the user clicks the icon.
@@ -750,18 +779,32 @@ class ObligatorSettingTab extends PluginSettingTab {
 		// --------------------------------------------------------------------
 		// Remove the previous day's TODOs if they are complete
 		// --------------------------------------------------------------------
-		setting_keep_template_headings = new Setting(containerEl)
-			.setName("Delete incomplete todos from previous day")
+                        setting_keep_template_headings = new Setting(containerEl)
+                                .setName("Delete incomplete todos from previous day")
 			.setDesc(`With this enabled, incomplete todos are deleted from yesterday's Daily note after being copied to today's Daily note. 
 					Keeping this disabled will simply duplicate incomplete todos from yesterday's Daily note. 
 					Enabling this is destructive and may result in lost data. 
 					Note that incomplete todos will be deleted from yesterday's Daily note regardless of what heading they are under.`)
 			.addToggle(toggle => {toggle
 				.setValue(this.plugin.settings.remove_empty_todos_from_previous_note)
-				.onChange(async value => {
-					this.plugin.settings.remove_empty_todos_from_previous_note = value;
-					await this.plugin.saveSettings();
-				})
-			});
-	}
+                                .onChange(async value => {
+                                        this.plugin.settings.remove_empty_todos_from_previous_note = value;
+                                        await this.plugin.saveSettings();
+                                })
+                        });
+
+                // -------------------------------------------------------------
+                // Toggle logging
+                // -------------------------------------------------------------
+                new Setting(containerEl)
+                        .setName("Enable logging")
+                        .setDesc("Log plugin actions to the console")
+                        .addToggle(toggle => {
+                                toggle.setValue(this.plugin.settings.logging)
+                                      .onChange(async value => {
+                                              this.plugin.settings.logging = value;
+                                              await this.plugin.saveSettings();
+                                      });
+                        });
+        }
 }
