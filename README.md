@@ -83,6 +83,7 @@ Here is a basic overview of the differences between the two:
 - Obligator deals with nested to-do items hierarchically, so a checked parent with
   any amount of unchecked children will get copied over wholly to preserve the
   structure.
+- Optional logging can be enabled to trace plugin actions in the developer console.
 
 - & More!
 
